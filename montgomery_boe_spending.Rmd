@@ -1,0 +1,207 @@
+---
+title: "Cleaning Montgomery County BOE spending data"
+output: html_document
+date: "2023-02-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+#loading libraries
+library(tidyverse)
+library(refinr)
+library(janitor)
+library(dplyr)
+library(stringr)
+library(tidyr)
+```
+```{r}
+#reading in the csv file for all MD counties from MD open data portal
+boe_spending <- read_csv("~/Downloads/boe_spending.csv") %>% 
+  clean_names()
+
+#filtering for Montgomery County Public Schools expenditures only
+#omitting columns with no data for Montgomery County
+montgomery_spending <- boe_spending %>% 
+  filter(agency_name == "Montgomery County Public Schools") %>% 
+  select(-purpose_of_payment_baltimore_county_only, -mbe)
+
+```
+```{r}
+#reading in FY2022 Montgomery County Public Schools data
+montgomery_fy2022 <- read_csv("~/Downloads/montgomery_fy2022.csv") %>% 
+  clean_names
+
+#standardizing column names
+montgomery_fy2022 <- montgomery_fy2022 %>% 
+  rename(payee_name = vendor_supplier) %>% 
+  rename(amount = amount_paid)
+
+#adding column indicating the fiscal year
+montgomery_fy2022["fiscal_year"] = "2022"
+```
+```{r}
+#reading in FY2018 Montgomery County Public Schools data
+montgomery_fy2018 <- read_csv("~/Downloads/montgomery_fy2018.csv") %>% 
+  clean_names
+
+#standardizing column names
+montgomery_fy2018 <- montgomery_fy2018 %>% 
+  rename(payee_name = vendor_supplier) %>% 
+  rename(amount = amount_paid)
+
+#adding column indicating the fiscal year
+montgomery_fy2018["fiscal_year"] = "2018"
+```
+
+```{r}
+#changing fiscal_year to character so that I can combine the data for 2018, 2022 and the other years
+montgomery_spending <- montgomery_spending %>% 
+  mutate(fiscal_year = as.character(fiscal_year))
+
+#combining into one dataframe
+combined_montgomery_spending <- bind_rows(montgomery_spending, montgomery_fy2018, montgomery_fy2022)
+```
+
+```{r}
+#creating a csv to load into OpenRefine
+write_csv(combined_montgomery_spending, "~/Downloads/combined_montgomery_spending.csv")
+
+#changed columns not containing only numbers to all caps
+combined_montgomery_spending <- combined_montgomery_spending %>% 
+  mutate(payee_name = str_to_upper(payee_name),
+         agency_name = str_to_upper(agency_name))
+
+#Then I loaded the csv in OpenRefine and standardized the payee names as well as I could.
+```
+
+```{r}
+#reading in new cleaned dataframe from OpenRefine
+montgomery_spending_cleaned <- read_csv("~/Downloads/montgomery_spending_cleaned.csv")
+
+#I decided to shorten "SAINT" to "ST". This only applied in one case.
+montgomery_spending_cleaned %>% 
+  filter(str_detect(payee_cleaned, "SAINT"))
+
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(payee_cleaned = case_when(
+    str_detect(payee_cleaned, "SAINT") ~ "ST COLETTA OF GREATER WASHINGTON INC",
+    TRUE ~ payee_cleaned))
+
+# I noticed  in OpenRefine that names of school boards and school systems weren't standardized across counties. I decided to keep school systems and school boards separate in case Baltimore County Public Schools is different from the BOE.
+montgomery_spending_cleaned %>% 
+  filter(str_detect(payee_cleaned, "BOARD OF ED"))
+
+montgomery_spending_cleaned %>% 
+  filter(str_detect(payee_cleaned, "SCHOOL"))
+
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(payee_cleaned = case_when(
+    str_detect(payee_cleaned, "BOARD OF EDUCATION OF BALTIMORE COUNTY") ~ "BALTIMORE COUNTY BOARD OF EDUCATION",
+    str_detect(payee_cleaned, "BOARD OF EDUCATION PRINCE GEORGE'S") ~ "PRINCE GEORGE'S COUNTY BOARD OF EDUCATION",
+    str_detect(payee_cleaned, "ANNE ARUNDEL CO PUBLIC SCHOOL") ~ "ANNE ARUNDEL COUNTY PUBLIC SCHOOLS",
+    str_detect(payee_cleaned, "THE HOWARD COUNTY PUBLIC SCHOOL SYSTEM") ~ "HOWARD COUNTY PUBLIC SCHOOLS",
+    TRUE ~ payee_cleaned))
+```
+
+```{r}
+#I decided to take the approach that less punctuation is for the best. So I got rid of periods.
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(payee_cleaned = str_replace_all(payee_cleaned, "\\.", ""))
+
+#I also decided to get rid of commas.
+montgomery_spending_cleaned %>% 
+  filter(str_detect(payee_cleaned, ", "))
+
+#Here I realized that using case_when this way replaces the entire string in the payee_cleaned column with just "INC" or "PC". But then I took a different approach with commas anyway - getting rid of all commas and then making a column indicating whether or not each payee was an individual, like you suggested.
+#montgomery_spending_cleaned %>% 
+# mutate(payee_cleaned = case_when(
+#    str_detect(payee_cleaned, ", INC") ~ " INC",
+#   str_detect(payee_cleaned, ", PC") ~ " PC",
+#    str_detect(payee_cleaned, ", LLC") ~ " LLC",
+#    str_detect(payee_cleaned, ", LLP") ~ " LLP",
+#    str_detect(payee_cleaned, ", DPC") ~ " DPC",
+#    TRUE ~ payee_cleaned)) %>% 
+#  filter(str_detect(payee_cleaned, "INC"))
+
+#omitting commas
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(payee_cleaned = str_replace_all(payee_cleaned, ",", ""))
+
+#creating a new column to distinguish between individual and group payees
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(payee_type = case_when(payee_cleaned == "BANNISTER JOI" | 
+                                  payee_cleaned == "DAMAS STANISLAW" | 
+                                  payee_cleaned == "HAGGERTY JOHN" | 
+                                  payee_cleaned == "HYMAN ANDREW J" | 
+                                  payee_cleaned == "MDINGI EMMANUEL" | 
+                                  payee_cleaned == "THOMPSON JOHN" | 
+                                  payee_cleaned == "TSENG PAUL" | 
+                                  payee_cleaned == "WARFIELD BERNARD T" | 
+                                  payee_cleaned == "CHEONG AMANDA" | 
+                                  payee_cleaned == "CLEARY JR VINCENT" | 
+                                  payee_cleaned == "RODRIGUEZ KATHLEEN M" | 
+                                  payee_cleaned == "BETANCES PAUL A" | 
+                                  payee_cleaned == "DORSEY LATISA T" | 
+                                  payee_cleaned == "GEMBERLING KATHERYN W" | 
+                                  payee_cleaned == "NEYLON SHAWN" | 
+                                  payee_cleaned == "NORMOYLE RICHARD M" | 
+                                  payee_cleaned == "WILCZYNSKI SUZANNE S" | 
+                                  payee_cleaned == "EY CRYSTAL" | 
+                                  payee_cleaned == "GROSS, DANIEL E" | 
+                                  payee_cleaned == "HONIG MEREDITH" | 
+                                  payee_cleaned == "KRAMER ETHAN" | 
+                                  payee_cleaned == "REIDER KELLY" ~ "individual",
+                                TRUE ~ "group"))
+
+#spot check
+montgomery_spending_cleaned %>% 
+  filter(str_detect(payee_cleaned, "NEYLON SHAWN"))
+
+#changing NAs in agency_name column to show Montgomery County Public Schools
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(agency_name = replace_na("MONTGOMERY COUNTY PUBLIC SCHOOLS"))
+
+#I tried this before the above, but it messed up some of the payee names that contained the letters "NA".
+#montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  #mutate(payee_cleaned = str_replace(payee_cleaned, "NA", "MONTGOMERY COUNTY PUBLIC SCHOOLS"))
+
+#standardizing payees with "&" in the name
+#Some companies seem not to use spaces around the "&" while others do. In an effort to make the dataframe more easily searchable, I decided to omit spaces around instances of "&" between two initials, not when "&" separates two complete words. Not sure if I made the right decision here, but I made a decision!
+#In a similar vein, I omitted spaces between initials. I'm sure I missed some, but I wasn't sure how to find them other than reading through the whole dataframe.
+montgomery_spending_cleaned %>% 
+  filter(str_detect(payee_cleaned, "&"))
+
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(payee_cleaned = case_when(
+    str_detect(payee_cleaned, "B & H FOTO & ELECTRONICS CORP") ~ "B&H FOTO & ELECTRONICS CORP",
+    str_detect(payee_cleaned, "T L GARDEN & ASSOCIATES INC") ~ "TL GARDEN & ASSOCIATES INC",
+    str_detect(payee_cleaned, "YOTI N N & ASSOCIATES INC") ~ "YOTI NN & ASSOCIATES INC",
+    str_detect(payee_cleaned, "D & F CONSTRUCTION CO INC") ~ "D&F CONSTRUCTION CO INC",
+    str_detect(payee_cleaned, "W W NORTON & COMPANY INC") ~ "WW NORTON & COMPANY INC",
+    str_detect(payee_cleaned, "WW NORTON & CO INC") ~ "WW NORTON & COMPANY INC",
+    str_detect(payee_cleaned, "H & S BAKERY INC") ~ "H&S BAKERY INC",
+    str_detect(payee_cleaned, "R & S AUTO & TRUCK SPRING WORKS INC") ~ "R&S AUTO & TRUCK SPRING WORKS INC",
+    str_detect(payee_cleaned, "L & L MUSIC WIND SHOP INC") ~ "L&L MUSIC WIND SHOP INC",
+    str_detect(payee_cleaned, "C N ROBINSON LIGHTING SUPPLY CO INC") ~ "CN ROBINSON LIGHTING SUPPLY CO INC",
+    str_detect(payee_cleaned, "W W GRAINGER INC") ~ "WW GRAINGER INC",
+    TRUE ~ payee_cleaned))
+
+#getting rid of apostrophes
+montgomery_spending_cleaned %>% 
+  filter(str_detect(payee_cleaned, "'"))
+
+montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
+  mutate(payee_cleaned = str_replace_all(payee_cleaned, "'", ""))
+
+#A concern I had is that some payees have more than one zip code listed. I supposed they could have moved, so I didn't mess with these.
+
+```
+
+```{r}
+#writing the final version to csv
+write_csv(montgomery_spending_cleaned, "~/Downloads/final_montgomery_spending.csv")
+
+```
+
