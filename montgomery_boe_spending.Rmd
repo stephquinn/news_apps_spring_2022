@@ -3,6 +3,7 @@ title: "Cleaning Montgomery County BOE spending data"
 output: html_document
 date: "2023-02-08"
 ---
+BOE spending update is at the bottom of the document.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -18,7 +19,7 @@ library(tidyr)
 ```
 ```{r}
 #reading in the csv file for all MD counties from MD open data portal
-boe_spending <- read_csv("~/Downloads/boe_spending.csv") %>% 
+boe_spending <- read_csv("~/Documents/GitHub/news_apps_spring_2022/boe_spending.csv") %>% 
   clean_names()
 
 #filtering for Montgomery County Public Schools expenditures only
@@ -30,7 +31,7 @@ montgomery_spending <- boe_spending %>%
 ```
 ```{r}
 #reading in FY2022 Montgomery County Public Schools data
-montgomery_fy2022 <- read_csv("~/Downloads/montgomery_fy2022.csv") %>% 
+montgomery_fy2022 <- read_csv("~/Documents/GitHub/news_apps_spring_2022/montgomery_fy2022.csv") %>% 
   clean_names
 
 #standardizing column names
@@ -43,7 +44,7 @@ montgomery_fy2022["fiscal_year"] = "2022"
 ```
 ```{r}
 #reading in FY2018 Montgomery County Public Schools data
-montgomery_fy2018 <- read_csv("~/Downloads/montgomery_fy2018.csv") %>% 
+montgomery_fy2018 <- read_csv("~/Documents/GitHub/news_apps_spring_2022/montgomery_fy2018.csv") %>% 
   clean_names
 
 #standardizing column names
@@ -66,7 +67,7 @@ combined_montgomery_spending <- bind_rows(montgomery_spending, montgomery_fy2018
 
 ```{r}
 #creating a csv to load into OpenRefine
-write_csv(combined_montgomery_spending, "~/Downloads/combined_montgomery_spending.csv")
+write_csv(combined_montgomery_spending, "~/Documents/GitHub/news_apps_spring_2022/combined_montgomery_spending.csv")
 
 #changed columns not containing only numbers to all caps
 combined_montgomery_spending <- combined_montgomery_spending %>% 
@@ -78,7 +79,7 @@ combined_montgomery_spending <- combined_montgomery_spending %>%
 
 ```{r}
 #reading in new cleaned dataframe from OpenRefine
-montgomery_spending_cleaned <- read_csv("~/Downloads/montgomery_spending_cleaned.csv")
+montgomery_spending_cleaned <- read_csv("~/Documents/GitHub/news_apps_spring_2022/montgomery_spending_cleaned.csv")
 
 #I decided to shorten "SAINT" to "ST". This only applied in one case.
 montgomery_spending_cleaned %>% 
@@ -186,6 +187,9 @@ montgomery_spending_cleaned <- montgomery_spending_cleaned %>%
     str_detect(payee_cleaned, "L & L MUSIC WIND SHOP INC") ~ "L&L MUSIC WIND SHOP INC",
     str_detect(payee_cleaned, "C N ROBINSON LIGHTING SUPPLY CO INC") ~ "CN ROBINSON LIGHTING SUPPLY CO INC",
     str_detect(payee_cleaned, "W W GRAINGER INC") ~ "WW GRAINGER INC",
+    str_detect(payee_cleaned, "M T LANEY CO INC") ~ "MT LANEY CO INC",
+    str_detect(payee_cleaned, "M R ENTERPRISES INC") ~ "MR ENTERPRISES INC",
+    str_detect(payee_cleaned, "LAND OLAKES INC") ~ "LAND O LAKES INC",
     TRUE ~ payee_cleaned))
 
 #getting rid of apostrophes
@@ -195,13 +199,99 @@ montgomery_spending_cleaned %>%
 montgomery_spending_cleaned <- montgomery_spending_cleaned %>% 
   mutate(payee_cleaned = str_replace_all(payee_cleaned, "'", ""))
 
-#A concern I had is that some payees have more than one zip code listed. I supposed they could have moved, so I didn't mess with these.
+#A concern I had is that some payees have more than one zip code listed. I suppose they could have moved, so I didn't mess with these.
 
 ```
 
 ```{r}
 #writing the final version to csv
-write_csv(montgomery_spending_cleaned, "~/Downloads/final_montgomery_spending.csv")
+write_csv(montgomery_spending_cleaned, "~/Documents/GitHub/news_apps_spring_2022/final_montgomery_spending.csv")
 
 ```
+
+```{r}
+#Exploring the cleaned data
+#I was surprised that there were so many individual payees. How many of them were affiliated with one of the "group" payees? For instance, Emmanuel Mdingi seems to be affiliated with the Rockville-based architectural firm DCI Architects.
+
+montgomery_spending_cleaned %>% 
+  group_by(fiscal_year) %>% 
+  summarize(total = sum(amount)) %>% 
+  arrange(desc(total))
+ 
+ #Are we missing FY2019??
+
+montgomery_spending_cleaned %>% 
+  group_by(payee_cleaned) %>% 
+  summarize(total = sum(amount)) %>% 
+  arrange(desc(total))
+  
+#The payees that received the most money were construction firms and contractors, with the exception of the top payee, which was Banc of America Public Capital Corporation. I wonder if they manage MCPS pension fund investments? What did Montgomery Public Schools build or renovate during these years?
+ 
+#MCPS paid more than $1 million to the Storm Water Management Facilities Repair Group Inc. What was being repaired? Is it normal for the school system to shoulder this cost?
+   
+#MCPS paid more than $33,000 to the Audobon Naturalist Society of the Central Atlantic States. I wonder what that was about.
+--
+# BOE spending update
+# number of records per year - The data shows the least records for FY2018 (615), while 2020-2022 vary between 708 and 710 records. This seems pretty normal to me. This also confirms that we are missing 2019.
+montgomery_spending_cleaned %>% 
+  group_by(fiscal_year) %>% 
+  summarize(count = n())
+
+#I want to make sure I understand the data correctly. Is each record one instance of a payee receiving a payment of more than $25,000, or does each entry represent a payee's total received payments amounting to more than $25,000 in a year?
+
+#To answer this question, I found the payees with the largest number of entries per year. It appears that it is possible for a payee to have multiple entries per year, but since these are only expenditures greater than $25,000, the numbers of payments per payee aren't large.
+montgomery_spending_cleaned %>% 
+  filter(fiscal_year == "2018") %>% 
+  group_by(payee_cleaned) %>% 
+  summarize(count = n()) %>% 
+  arrange(desc(count))
+
+montgomery_spending_cleaned %>% 
+  filter(fiscal_year == "2020") %>% 
+  group_by(payee_cleaned) %>% 
+  summarize(count = n()) %>% 
+  arrange(desc(count))
+
+#Top payees per year
+#Overall thoughts: Lots of construction. I'm still curious about what Banc of America Public Capital Corp is doing. American Truck & Bus is a consistent presence - probably for school bus sales and/or upkeep - as are IT services companies.
+
+#2018: Construction companies dominate the top five, with the only exception being number 4, Banc of America Public Capital Corp (investing pension fund money?). The top five are Hess Construction and Engineering Services Inc ($51.6 million), Oak Contracting LLC ($38 million), Dustin Construction Inc ($35.3 million), Banc of America Public Capital Corp ($32.3 million), Henley Construction Co Inc ($19.2 million).
+#The others include a company that sells IT software, one that sells buses, Pepco, etc.
+montgomery_spending_cleaned %>% 
+  filter(fiscal_year == "2018") %>% 
+  group_by(payee_cleaned) %>% 
+  summarize(total = sum(amount)) %>% 
+  arrange(desc(total)) %>% 
+  slice(1:10)
+
+#2020: Still a lot of construction and Banc of America Public Capital Corp, but the construction companies aren't all the same: Keller Construction Management Inc ($66.6 million), Dustin Construction Inc ($53.6 million), Hess Construction and Engineering Services Inc ($36.7 million), Henley Construction Co Inc ($30.8 million). Fifth place is CDW LLC, the IT solutions company ($30.6 million). Banc of America Public Capital Corp again ($26.4 million). Keller Brothers Inc and Keller Construction Management Inc are part of the same company (https://kellerbrothers.com/about), but I figured maybe it's helpful to keep them disaggregated.
+montgomery_spending_cleaned %>% 
+  filter(fiscal_year == "2020") %>% 
+  group_by(payee_cleaned) %>% 
+  summarize(total = sum(amount)) %>% 
+  arrange(desc(total)) %>% 
+  slice(1:10)
+
+#2021: Payments to the IT software company, CDW LLC, are up, to $53.5 million (from something like $18 million in FY2018 and $30 million in FY2020), in addition to Data Networks of America Inc, another IT services company. Otherwise, Keller Brothers Inc and Dustin Construction Inc still made the top ten. Maybe interesting that payments to American Truck & Bus didn't decrease in a year when school was mostly from home. Is it weird that it's the exact same number?
+montgomery_spending_cleaned %>% 
+  filter(fiscal_year == "2021") %>% 
+  group_by(payee_cleaned) %>% 
+  summarize(total = sum(amount)) %>% 
+  arrange(desc(total)) %>% 
+  slice(1:10)
+
+#2022: Keller Brothers Inc, Hess Construction and Engineering Services, and Dustin Construction Inc still made the top ten. There's some variation from previous years, but nothing crazy.
+montgomery_spending_cleaned %>% 
+  filter(fiscal_year == "2022") %>% 
+  group_by(payee_cleaned) %>% 
+  summarize(total = sum(amount)) %>% 
+  arrange(desc(total)) %>% 
+  slice(1:10)
+
+#Wanted to check for missing payment amounts - didn't see anything
+montgomery_spending_cleaned %>% 
+  filter(str_detect(amount, "NA"))
+```
+
+   
 
